@@ -50,12 +50,12 @@ public class SerialSocket implements SerialInputOutputManager.Listener {
     void connect(SerialListener listener) throws IOException {
         this.listener = listener;
         ContextCompat.registerReceiver(context, disconnectBroadcastReceiver, new IntentFilter(Constants.INTENT_ACTION_DISCONNECT), ContextCompat.RECEIVER_NOT_EXPORTED);
-	try {
-	    serialPort.setDTR(true); // for arduino, ...
-	    serialPort.setRTS(true);
-	} catch (UnsupportedOperationException e) {
-	    Log.d(TAG, "Failed to set initial DTR/RTS", e);
-	}
+        try {
+	        serialPort.setDTR(true); // for arduino, ...
+	        serialPort.setRTS(true);
+	    } catch (UnsupportedOperationException e) {
+	        Log.d(TAG, "Failed to set initial DTR/RTS", e);
+	    }
         ioManager = new SerialInputOutputManager(serialPort, this);
         ioManager.start();
     }

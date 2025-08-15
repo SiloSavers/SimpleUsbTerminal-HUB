@@ -12,13 +12,27 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Log;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 /**
  * create notification and queue serial data while activity is not in the foreground
@@ -55,7 +69,7 @@ public class SerialService extends Service implements SerialListener {
     private boolean connected;
 
     /**
-     * Lifecylce
+     * Lifecycle
      */
     public SerialService() {
         mainLooper = new Handler(Looper.getMainLooper());
@@ -93,6 +107,30 @@ public class SerialService extends Service implements SerialListener {
         if(socket != null) {
             socket.disconnect();
             socket = null;
+        }
+    }
+
+    /**
+     * Write message to log file with timestamp
+     */
+    private void writeToLogFile(String message) {
+        try {
+            // Get external storage directory
+            File externalDir = getExternalFilesDir(null);
+            if (externalDir != null) {
+                File logFile = new File(externalDir, "serial_debug.log");
+
+                // Create timestamp
+                //String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
+                String logEntry = "timestamp" + " - " + message + "\n";
+
+                // Append to file
+                FileWriter writer = new FileWriter(logFile, true);
+                writer.write(logEntry);
+                writer.close();
+            }
+        } catch (IOException e) {
+            Log.e("SerialService", "Error writing to log file", e);
         }
     }
 
@@ -267,6 +305,10 @@ public class SerialService extends Service implements SerialListener {
                 }
             }
         }
+        //Toast.makeText(getActivity(), "hhhhard", Toast.LENGTH_SHORT).show();
+        // Run network operations in background
+
+
     }
 
     public void onSerialIoError(Exception e) {

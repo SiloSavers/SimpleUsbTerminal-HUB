@@ -23,6 +23,7 @@ import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.method.ScrollingMovementMethod;
 import android.text.style.ForegroundColorSpan;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -45,13 +46,33 @@ import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
 import com.hoho.android.usbserial.util.XonXoffFilter;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.EnumSet;
+import java.util.Collections;          // for Collections.singletonList
+import java.nio.charset.StandardCharsets; // for UTF-8 conversion
+import java.io.FileOutputStream;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class TerminalFragment extends Fragment implements ServiceConnection, SerialListener {
+
+    //Google Sheets Variables
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private final OkHttpClient client = new OkHttpClient();
 
     private enum Connected { False, Pending, True }
 
@@ -90,12 +111,70 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         };
     }
 
+    private void sendDataToSheet(String name, String value){
+        //logToFile("calling send sheet function");
+        String sheetName = "Hi6";
+        String json = "{\"targetSheet\":\"" + sheetName + "\","
+                + "\"name\":\"" + name + "\","
+                + "\"value\":\"" + value + "\"}";
+
+        RequestBody body = RequestBody.create(json, JSON);
+        Request request = new Request.Builder()
+                .url("https://script.google.com/macros/s/AKfycbxWxFbOdwjl1NWNk_asnPl7T0MF6uH3vQZv5hjR7iVm6HDQoK4OQwA30iJGyWyJSTV7/exec") // Replace with your Apps Script Web App URL
+                .post(body)
+                .build();
+        //logToFile("Starting the client call thing");
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                logToFile("onFailure called " + e);
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    System.out.println(response.body().string());
+                } else {
+                    System.err.println("Request failed: " + response.code());
+                    logToFile("Response failed");
+                }
+            }
+        });
+    }
+
+    private void logToFile(String message) {
+        try {
+            String filename = "app_log.txt";
+            File logFile = new File(requireContext().getExternalFilesDir(null), filename);
+
+            FileWriter writer = new FileWriter(logFile, true); // true = append mode
+            writer.append(new Date().toString())
+                    .append(" - ")
+                    .append(message)
+                    .append("\n");
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+    private void clearLogFile() {
+        try {
+            File logFile = new File(requireContext().getExternalFilesDir(null), "app_log.txt");
+            if (logFile.exists()) {
+                new FileWriter(logFile, false).close(); // false = overwrite with nothing
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
     /*
      * Lifecycle
      */
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        clearLogFile();
+        logToFile("created fragment");
         setHasOptionsMenu(true);
         setRetainInstance(true);
         deviceId = getArguments().getInt("device");
@@ -394,6 +473,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
 
     private void receive(ArrayDeque<byte[]> datas) {
         SpannableStringBuilder spn = new SpannableStringBuilder();
+        //Toast.makeText(getActivity(), "received " + datas, Toast.LENGTH_SHORT).show();
         for (byte[] data : datas) {
             if (flowControlFilter != null)
                 data = flowControlFilter.filter(data);
@@ -475,10 +555,61 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         datas.add(data);
         receive(datas);
     }
-
+/**/
     public void onSerialRead(ArrayDeque<byte[]> datas) {
         receive(datas);
     }
+    /**/
+    /*
+    @Override
+    public void onSerialRead(ArrayDeque<byte[]> datas) {
+        logToFile("begin serial read");
+        receive(datas);
+        // 1️⃣ Make sure the fragment is attached and views are initialized
+        if (!isAdded() || getView() == null) return;
+
+        // 2️⃣ Display each chunk in the terminal safely on UI thread
+        getActivity().runOnUiThread(() -> {
+            for (byte[] chunk : datas) {
+                receive(new ArrayDeque<>(Collections.singletonList(chunk)));
+            }
+        });
+
+        // 3️⃣ Combine all byte[] chunks into a single UTF-8 string
+        StringBuilder sb = new StringBuilder();
+        for (byte[] chunk : datas) {
+            sb.append(new String(chunk, StandardCharsets.UTF_8));
+        }
+        final String textToUpload = sb.toString();
+
+        // 4️⃣ Upload to Google Sheets safely in a background thread
+        new Thread(() -> {
+            try {
+                logToFile("try to upload data");
+                sendDataToSheet("UsbData", textToUpload);
+            } catch (Exception e) {
+                e.printStackTrace();
+                logToFile("Failed Serial Read and threw Exception" + e);
+                //logToFile("OnSerialRead has error on Thread creation");
+            }
+        }).start();
+    }
+    */
+
+            /*
+
+
+            public void onSerialRead(ArrayDeque<byte[]> datas) {
+        receive(datas);
+    }
+
+    try {
+            sendDataToSheet("test","spn.toString()");
+        } catch (IOException e) {
+            status("send data to Sheet failed: " + e.getMessage());
+            Toast.makeText(getActivity(), "sheet failure", Toast.LENGTH_SHORT).show();
+        }
+     */
 
     @Override
     public void onSerialIoError(Exception e) {
