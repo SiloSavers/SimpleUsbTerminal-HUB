@@ -42,7 +42,7 @@ public class DevicesFragment extends ListFragment {
 
     private final ArrayList<ListItem> listItems = new ArrayList<>();
     private ArrayAdapter<ListItem> listAdapter;
-    private int baudRate = 9600;
+    private int baudRate = 115200;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -89,6 +89,14 @@ public class DevicesFragment extends ListFragment {
     public void onResume() {
         super.onResume();
         refresh();
+        getListView().postDelayed(this::autoConnectFirstPort, 5000); // 5-s delay
+    }
+
+    /** Connect to the first entry that actually has a driver. */
+    public void autoConnectFirstPort() {
+        for (ListItem li : listItems) {
+            if (li.driver != null) { openTerminal(li); break; }
+        }
     }
 
     @Override
@@ -133,6 +141,24 @@ public class DevicesFragment extends ListFragment {
             }
         }
         listAdapter.notifyDataSetChanged();
+    }
+
+    private void openTerminal(ListItem li) {
+        if (li.driver == null) {
+            Toast.makeText(getActivity(), "No driver for that device", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Bundle args = new Bundle();
+        args.putInt("device", li.device.getDeviceId());
+        args.putInt("port",   li.port);
+        args.putInt("baud",   baudRate);
+        TerminalFragment tf = new TerminalFragment();
+        tf.setArguments(args);
+        requireActivity().getSupportFragmentManager()
+                .beginTransaction()
+                .replace(R.id.fragment, tf, "terminal")
+                .addToBackStack(null)
+                .commit();
     }
 
     @Override

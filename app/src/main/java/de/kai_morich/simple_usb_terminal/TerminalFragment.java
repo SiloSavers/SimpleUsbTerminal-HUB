@@ -37,6 +37,7 @@ import android.widget.ToggleButton;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
@@ -59,6 +60,7 @@ import java.util.EnumSet;
 import java.util.Collections;          // for Collections.singletonList
 import java.nio.charset.StandardCharsets; // for UTF-8 conversion
 import java.io.FileOutputStream;
+
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -111,23 +113,40 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         };
     }
 
-    private void sendDataToSheet(String name, String value){
-        //logToFile("calling send sheet function");
-        String sheetName = "Hi6";
+    public void sendLogToSheet(String type, String value){
+        if(type.equals("log")){
+            sendDataToSheet(type,value);
+        }
+    }
+
+    private void sendDataToSheet(String type, String value){
+        //logToFile("call sendDataToSheet type:" + type + " value: " + value);
+        String sheetName;
+        String[] parts = new String[5];
+        if (type.equals("SENSOR:")){
+            parts = value.split(" ");
+            sheetName = parts[1];
+        } else{
+            sheetName = "log";
+            parts[2] = type;
+            parts[3] = value;
+        }
+
+
         String json = "{\"targetSheet\":\"" + sheetName + "\","
-                + "\"name\":\"" + name + "\","
-                + "\"value\":\"" + value + "\"}";
+                + "\"co2\":\"" + parts[2] + "\","
+                + "\"temp\":\"" + parts[3] + "\","
+                + "\"rh\":\"" + parts[4] + "\"}";
 
         RequestBody body = RequestBody.create(json, JSON);
         Request request = new Request.Builder()
-                .url("https://script.google.com/macros/s/AKfycbxWxFbOdwjl1NWNk_asnPl7T0MF6uH3vQZv5hjR7iVm6HDQoK4OQwA30iJGyWyJSTV7/exec") // Replace with your Apps Script Web App URL
+                .url("https://script.google.com/macros/s/AKfycbxPIoONLLhJ_fk5TwvxZjK3k_Sj9lsH5xd1P5TlEgPFBL8bm2gHtMTbU8MoIqRJ73kY/exec") // Replace with your Apps Script Web App URL
                 .post(body)
                 .build();
-        //logToFile("Starting the client call thing");
         client.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
-                logToFile("onFailure called " + e);
+                logToFile("onFailure called name:" + type + " Exception: " + e);
             }
 
             @Override
@@ -136,7 +155,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                     System.out.println(response.body().string());
                 } else {
                     System.err.println("Request failed: " + response.code());
-                    logToFile("Response failed");
+                    logToFile("Response failed name: " + type);
                 }
             }
         });
@@ -175,6 +194,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         super.onCreate(savedInstanceState);
         clearLogFile();
         logToFile("created fragment");
+        sendDataToSheet("log","fragment started"); //TODO remove me probably
         setHasOptionsMenu(true);
         setRetainInstance(true);
         deviceId = getArguments().getInt("device");
@@ -349,7 +369,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     /*
      * Serial + UI
      */
-    private void connect() {
+    public void connect() { //Maybe this shouldn't be public
         connect(null);
     }
 
@@ -555,8 +575,42 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         datas.add(data);
         receive(datas);
     }
-/**/
     public void onSerialRead(ArrayDeque<byte[]> datas) {
+        logToFile("onSerialRead START!!");
+        //byte[] first = datas.peekFirst();
+        // Collect everything in the deque into a single String
+        StringBuilder sb = new StringBuilder();
+        for (byte[] item : datas) {
+            sb.append(new String(item, StandardCharsets.UTF_8));
+        }
+
+        // Convert to String
+        String result = sb.toString();
+
+        // Split into lines
+        String[] lines = result.split("\\r?\\n");
+
+        // Trim and send each line
+        for (String line : lines) {
+            line = line.trim(); // remove leading/trailing spaces
+            // Replace multiple spaces/tabs between words with a single space
+            line = line.replaceAll("\\s+", " ");
+            if (!line.isEmpty()) { // skip blank lines
+                String firstWord = line.split("\\s+")[0];  // split on any whitespace and take first element this checks if it is a Sensor or not
+                sendDataToSheet(firstWord, line);
+                logToFile("Sent Data: " + line);
+            }
+        }
+
+        //String firstString = new String(first, StandardCharsets.UTF_8).trim();
+        //logToFile("datas[0] " + firstString);
+        if(datas.size() != 1){
+            //logToFile("ArrayDeque Length not 1 instead it is: " + datas.size());
+        }
+
+        //String firstWord = firstString.split("\\s+")[0];  // split on any whitespace and take first element this checks if it is a Sensor or not
+        //sendDataToSheet(firstWord, firstString);
+
         receive(datas);
     }
     /**/
@@ -610,11 +664,32 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             Toast.makeText(getActivity(), "sheet failure", Toast.LENGTH_SHORT).show();
         }
      */
-
+    private int retryCount = 0;
+    private static final int MAX_RETRIES = 3;
     @Override
     public void onSerialIoError(Exception e) {
+        sendDataToSheet("log","connection lost: " + e);
         status("connection lost: " + e.getMessage());
         disconnect();
+
+        if (retryCount < MAX_RETRIES) {
+            retryCount++;
+            status("attempting reconnect... (attempt " + retryCount + " of " + MAX_RETRIES + ")");
+            new Handler().postDelayed(() -> {
+                try {
+                    connect();
+                } catch (Exception reconnectException) {
+                    status("reconnect attempt " + retryCount + " failed: " + reconnectException.getMessage());
+                    // Continue with next retry attempt
+                    if (retryCount < MAX_RETRIES) {
+                        onSerialIoError(reconnectException);
+                    }
+                }
+            }, 1500);
+        } else {
+            status("max retries reached, manual restart required");
+            retryCount = 0; // Reset for next manual connection attempt
+        }
     }
 
     class ControlLines {
