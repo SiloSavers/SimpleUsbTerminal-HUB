@@ -25,6 +25,10 @@
         android:title="Flow Control"
         app:showAsAction="never" />
     <item
+        android:id="@+id/clearLog"
+        android:title="Clear Log File"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/backgroundNotification"
         android:title="Notification if App in background"
         android:checkable="true"

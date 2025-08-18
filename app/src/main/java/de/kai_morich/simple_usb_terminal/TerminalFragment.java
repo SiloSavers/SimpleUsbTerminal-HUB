@@ -75,6 +75,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     //Google Sheets Variables
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private final OkHttpClient client = new OkHttpClient();
+    String buffer = ""; //used for buffering not complete lines
 
     private enum Connected { False, Pending, True }
 
@@ -192,8 +193,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        clearLogFile();
-        logToFile("created fragment");
+        //clearLogFile();
+        logToFile("created fragment:\n");
         sendDataToSheet("log","fragment started"); //TODO remove me probably
         setHasOptionsMenu(true);
         setRetainInstance(true);
@@ -342,6 +343,9 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             return true;
         } else if (id == R.id.flowControl) {
             controlLines.selectFlowControl();
+            return true;
+        } else if (id == R.id.clearLog) { //clear the backed up log file
+            clearLogFile();
             return true;
         } else if (id == R.id.backgroundNotification) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -566,7 +570,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     @Override
     public void onSerialConnectError(Exception e) {
         status("connection failed: " + e.getMessage());
-        disconnect();
+        logToFile("connection failed: " + e.getMessage());
+        sendDataToSheet("log","connection failed: " + e.getMessage());
     }
 
     @Override
@@ -576,19 +581,25 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         receive(datas);
     }
     public void onSerialRead(ArrayDeque<byte[]> datas) {
-        logToFile("onSerialRead START!!");
-        //byte[] first = datas.peekFirst();
         // Collect everything in the deque into a single String
         StringBuilder sb = new StringBuilder();
+        sb.append(buffer); //append the buffer that may or may not have data
         for (byte[] item : datas) {
             sb.append(new String(item, StandardCharsets.UTF_8));
         }
-
         // Convert to String
         String result = sb.toString();
-
-        // Split into lines
-        String[] lines = result.split("\\r?\\n");
+        String[] lines;
+        if(result.endsWith("\n")){
+            // Split into lines
+            lines = result.split("\\r?\\n");
+            buffer = ""; //buffer is null because the whole thing finished
+        } else{
+            // Split into lines
+            lines = result.split("\\r?\\n");
+            buffer = lines[lines.length - 1]; //last element of the lines array needs to be buffered for the next run of OnSerialRead
+            lines = java.util.Arrays.copyOf(lines, lines.length - 1); //remove last line element to be processed later
+        }
 
         // Trim and send each line
         for (String line : lines) {
@@ -602,74 +613,21 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             }
         }
 
-        //String firstString = new String(first, StandardCharsets.UTF_8).trim();
-        //logToFile("datas[0] " + firstString);
-        if(datas.size() != 1){
-            //logToFile("ArrayDeque Length not 1 instead it is: " + datas.size());
-        }
-
-        //String firstWord = firstString.split("\\s+")[0];  // split on any whitespace and take first element this checks if it is a Sensor or not
-        //sendDataToSheet(firstWord, firstString);
-
         receive(datas);
     }
     /**/
     /*
-    @Override
-    public void onSerialRead(ArrayDeque<byte[]> datas) {
-        logToFile("begin serial read");
-        receive(datas);
-        // 1️⃣ Make sure the fragment is attached and views are initialized
-        if (!isAdded() || getView() == null) return;
-
-        // 2️⃣ Display each chunk in the terminal safely on UI thread
-        getActivity().runOnUiThread(() -> {
-            for (byte[] chunk : datas) {
-                receive(new ArrayDeque<>(Collections.singletonList(chunk)));
-            }
-        });
-
-        // 3️⃣ Combine all byte[] chunks into a single UTF-8 string
-        StringBuilder sb = new StringBuilder();
-        for (byte[] chunk : datas) {
-            sb.append(new String(chunk, StandardCharsets.UTF_8));
-        }
-        final String textToUpload = sb.toString();
-
-        // 4️⃣ Upload to Google Sheets safely in a background thread
-        new Thread(() -> {
-            try {
-                logToFile("try to upload data");
-                sendDataToSheet("UsbData", textToUpload);
-            } catch (Exception e) {
-                e.printStackTrace();
-                logToFile("Failed Serial Read and threw Exception" + e);
-                //logToFile("OnSerialRead has error on Thread creation");
-            }
-        }).start();
-    }
-    */
-
-            /*
-
-
             public void onSerialRead(ArrayDeque<byte[]> datas) {
         receive(datas);
     }
-
-    try {
-            sendDataToSheet("test","spn.toString()");
-        } catch (IOException e) {
-            status("send data to Sheet failed: " + e.getMessage());
-            Toast.makeText(getActivity(), "sheet failure", Toast.LENGTH_SHORT).show();
-        }
      */
     private int retryCount = 0;
     private static final int MAX_RETRIES = 3;
     @Override
     public void onSerialIoError(Exception e) {
-        sendDataToSheet("log","connection lost: " + e);
+        sendDataToSheet("log","connection lost: " + e.getMessage());
         status("connection lost: " + e.getMessage());
+        logToFile("connection lost: " + e.getMessage());
         disconnect();
 
         if (retryCount < MAX_RETRIES) {
