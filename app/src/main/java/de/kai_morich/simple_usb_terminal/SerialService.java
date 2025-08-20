@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.os.BatteryManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
+import java.util.Date;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -38,6 +40,7 @@ import okhttp3.Response;
  * create notification and queue serial data while activity is not in the foreground
  * use listener chain: SerialSocket -> SerialService -> UI fragment
  */
+@RequiresApi(api = Build.VERSION_CODES.O)
 public class SerialService extends Service implements SerialListener {
 
     class SerialBinder extends Binder {
@@ -68,6 +71,13 @@ public class SerialService extends Service implements SerialListener {
     private SerialListener listener;
     private boolean connected;
 
+    private static int  phoneCharge = 0; //battery level of phone
+    private Handler batteryCheckHandler;
+
+    //Google Sheets Variables
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private final OkHttpClient client = new OkHttpClient();
+
     /**
      * Lifecycle
      */
@@ -77,6 +87,7 @@ public class SerialService extends Service implements SerialListener {
         queue1 = new ArrayDeque<>();
         queue2 = new ArrayDeque<>();
         lastRead = new QueueItem(QueueType.Read);
+        startBatteryCheckHandler();
     }
 
     @Override
@@ -91,6 +102,77 @@ public class SerialService extends Service implements SerialListener {
     public IBinder onBind(Intent intent) {
         return binder;
     }
+
+    private static BatteryManager bm;
+
+    private final Runnable batteryCheckRunnable = new Runnable() { //written by GPT 3.5 with prompts from Coby's code
+
+        @Override
+        public void run() {
+            bm = (BatteryManager) getSystemService(Context.BATTERY_SERVICE);
+            phoneCharge = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            //print_to_terminal("Read Phone battery level: " + phoneCharge);
+            System.out.print("Battery level " +  String.valueOf(phoneCharge) + "\n");
+            sendDataToSheet("log","Phone Battery level " + phoneCharge);
+            //logToFile("Phone Battery level " + phoneCharge);
+
+            //Log.d("BatteryLevel", String.valueOf(phoneCharge));
+
+            batteryCheckHandler.postDelayed(batteryCheckRunnable, 30 * 60 * 1000); //delay
+        }
+    };
+
+    private void startBatteryCheckHandler() {
+        Looper looper = Looper.myLooper();
+        if (looper != null) {
+            batteryCheckHandler = new Handler(looper);
+            batteryCheckHandler.post(batteryCheckRunnable);
+        }
+    }
+
+    public static float getPhoneChargePercent() { return phoneCharge; }
+
+private void sendDataToSheet(String type, String value){
+    //logToFile("call sendDataToSheet type:" + type + " value: " + value);
+    String sheetName;
+    String[] parts = new String[5];
+    if (type.equals("SENSOR:")){
+        parts = value.split(" ");
+        sheetName = parts[1];
+    } else{
+        sheetName = "log";
+        parts[2] = type;
+        parts[3] = value;
+    }
+
+
+    String json = "{\"targetSheet\":\"" + sheetName + "\","
+            + "\"co2\":\"" + parts[2] + "\","
+            + "\"temp\":\"" + parts[3] + "\","
+            + "\"rh\":\"" + parts[4] + "\"}";
+
+    RequestBody body = RequestBody.create(json, JSON);
+    Request request = new Request.Builder()
+            .url("https://script.google.com/macros/s/AKfycbwL7X5sIfikv70xaw_6yWRZGkkWEYaAIgQSUDaWThiWBk5IQczG5kWvSYTQRol2aXd2/exec") // Replace with your Apps Script Web App URL
+            .post(body)
+            .build();
+    client.newCall(request).enqueue(new Callback() {
+        @Override
+        public void onFailure(Call call, IOException e) {
+            //logToFile("onFailure called name:" + type + " Exception: " + e);
+        }
+
+        @Override
+        public void onResponse(Call call, Response response) throws IOException {
+            if (response.isSuccessful()) {
+                System.out.println(response.body().string());
+            } else {
+                System.err.println("Request failed: " + response.code());
+                //logToFile("Response failed name: " + type);
+            }
+        }
+    });
+}
 
     /**
      * Api

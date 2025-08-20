@@ -61,7 +61,6 @@ import java.util.Collections;          // for Collections.singletonList
 import java.nio.charset.StandardCharsets; // for UTF-8 conversion
 import java.io.FileOutputStream;
 
-
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -70,6 +69,8 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
+
+@RequiresApi(api = Build.VERSION_CODES.O)
 public class TerminalFragment extends Fragment implements ServiceConnection, SerialListener {
 
     //Google Sheets Variables
@@ -119,7 +120,6 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             sendDataToSheet(type,value);
         }
     }
-
     private void sendDataToSheet(String type, String value){
         //logToFile("call sendDataToSheet type:" + type + " value: " + value);
         String sheetName;
@@ -141,7 +141,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
 
         RequestBody body = RequestBody.create(json, JSON);
         Request request = new Request.Builder()
-                .url("https://script.google.com/macros/s/AKfycbxPIoONLLhJ_fk5TwvxZjK3k_Sj9lsH5xd1P5TlEgPFBL8bm2gHtMTbU8MoIqRJ73kY/exec") // Replace with your Apps Script Web App URL
+                .url("https://script.google.com/macros/s/AKfycbwL7X5sIfikv70xaw_6yWRZGkkWEYaAIgQSUDaWThiWBk5IQczG5kWvSYTQRol2aXd2/exec") // Replace with your Apps Script Web App URL
                 .post(body)
                 .build();
         client.newCall(request).enqueue(new Callback() {
@@ -177,6 +177,9 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             e.printStackTrace();
         }
     }
+
+
+
     private void clearLogFile() {
         try {
             File logFile = new File(requireContext().getExternalFilesDir(null), "app_log.txt");
