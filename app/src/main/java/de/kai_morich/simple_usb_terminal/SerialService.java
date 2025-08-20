@@ -7,6 +7,10 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.BatteryManager;
 import android.os.Binder;
 import android.os.Build;
@@ -73,6 +77,7 @@ public class SerialService extends Service implements SerialListener {
 
     private static int  phoneCharge = 0; //battery level of phone
     private Handler batteryCheckHandler;
+    private Handler pressureCheckHandler;
 
     //Google Sheets Variables
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
@@ -88,6 +93,7 @@ public class SerialService extends Service implements SerialListener {
         queue2 = new ArrayDeque<>();
         lastRead = new QueueItem(QueueType.Read);
         startBatteryCheckHandler();
+        startPressureCheckHandler();
     }
 
     @Override
@@ -131,6 +137,50 @@ public class SerialService extends Service implements SerialListener {
     }
 
     public static float getPhoneChargePercent() { return phoneCharge; }
+
+    private void readPressureOnce() {
+        SensorManager sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        Sensor pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+
+        if (pressureSensor == null) {
+            Log.e("Pressure", "No pressure sensor found");
+            return;
+        }
+
+        SensorEventListener oneShotListener = new SensorEventListener() {
+            @Override
+            public void onSensorChanged(SensorEvent event) {
+                float pressure = event.values[0];
+                Log.d("Pressure", "One-shot reading: " + pressure + " hPa");
+
+                // Example: report to Sheets
+                sendDataToSheet("log", "Pressure: " + pressure);
+
+                sensorManager.unregisterListener(this); // stop after one reading
+            }
+
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+        };
+
+        sensorManager.registerListener(oneShotListener, pressureSensor, SensorManager.SENSOR_DELAY_NORMAL);
+    }
+
+    private final Runnable pressureCheckRunnable = new Runnable() {
+        @Override
+        public void run() {
+            readPressureOnce();
+            pressureCheckHandler.postDelayed(this, 15 * 60 * 1000); // 30 minutes
+        }
+    };
+
+    private void startPressureCheckHandler() {
+        Looper looper = Looper.myLooper();
+        if (looper != null) {
+            pressureCheckHandler = new Handler(looper);
+            pressureCheckHandler.post(pressureCheckRunnable);
+        }
+    }
 
 private void sendDataToSheet(String type, String value){
     //logToFile("call sendDataToSheet type:" + type + " value: " + value);
