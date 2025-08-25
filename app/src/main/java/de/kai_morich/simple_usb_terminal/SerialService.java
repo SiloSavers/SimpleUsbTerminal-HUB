@@ -112,7 +112,7 @@ public class SerialService extends Service implements SerialListener {
     private static BatteryManager bm;
 
     private final Runnable batteryCheckRunnable = new Runnable() { //written by GPT 3.5 with prompts from Coby's code
-
+    //runnable that gets the Phone Battery level every 30 minutes and reports to the Google Sheets
         @Override
         public void run() {
             bm = (BatteryManager) getSystemService(Context.BATTERY_SERVICE);
@@ -138,22 +138,20 @@ public class SerialService extends Service implements SerialListener {
 
     public static float getPhoneChargePercent() { return phoneCharge; }
 
-    private void readPressureOnce() {
-        SensorManager sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        Sensor pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+    private void readPressureOnce() {//read the pressure once
+        SensorManager sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE); //get a sensorManager
+        Sensor pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE); //set the sensor to a Pressure Type
 
-        if (pressureSensor == null) {
+        if (pressureSensor == null) { //If the pressureSensor is null report to sheets and say no pressure sensor
             Log.e("Pressure", "No pressure sensor found");
             return;
         }
 
-        SensorEventListener oneShotListener = new SensorEventListener() {
+        SensorEventListener oneShotListener = new SensorEventListener() { //create a oneShotListener
             @Override
-            public void onSensorChanged(SensorEvent event) {
+            public void onSensorChanged(SensorEvent event) { //on SensorChange send the log data to the sheet
                 float pressure = event.values[0];
                 Log.d("Pressure", "One-shot reading: " + pressure + " hPa");
-
-                // Example: report to Sheets
                 sendDataToSheet("log", "Pressure: " + pressure);
 
                 sensorManager.unregisterListener(this); // stop after one reading
@@ -166,7 +164,7 @@ public class SerialService extends Service implements SerialListener {
         sensorManager.registerListener(oneShotListener, pressureSensor, SensorManager.SENSOR_DELAY_NORMAL);
     }
 
-    private final Runnable pressureCheckRunnable = new Runnable() {
+    private final Runnable pressureCheckRunnable = new Runnable() { //runnable that gets the pressure reading every 15 minutes
         @Override
         public void run() {
             readPressureOnce();
@@ -174,7 +172,7 @@ public class SerialService extends Service implements SerialListener {
         }
     };
 
-    private void startPressureCheckHandler() {
+    private void startPressureCheckHandler() {//starts the pressure handler
         Looper looper = Looper.myLooper();
         if (looper != null) {
             pressureCheckHandler = new Handler(looper);

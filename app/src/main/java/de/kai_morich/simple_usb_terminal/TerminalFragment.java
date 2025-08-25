@@ -120,20 +120,20 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             sendDataToSheet(type,value);
         }
     }
-    private void sendDataToSheet(String type, String value){
+    private void sendDataToSheet(String type, String value){ //this function sends data that we want to send to a Google Sheet
         //logToFile("call sendDataToSheet type:" + type + " value: " + value);
-        String sheetName;
-        String[] parts = new String[5];
-        if (type.equals("SENSOR:")){
+        String sheetName; //the tab on the sheet that we want to send it to
+        String[] parts = new String[5]; //allows us to parse the sensor data into 5 parts
+        if (type.equals("SENSOR:")){ //if type is sensor parse the data along space lines and set the sheetName to be the MUI
             parts = value.split(" ");
             sheetName = parts[1];
-        } else{
+        } else{ //otherwise send all other data to the log
             sheetName = "log";
             parts[2] = type;
             parts[3] = value;
         }
 
-
+        //This creates the json string that is actually sent to the Google Sheet. these all need to be synced
         String json = "{\"targetSheet\":\"" + sheetName + "\","
                 + "\"co2\":\"" + parts[2] + "\","
                 + "\"temp\":\"" + parts[3] + "\","
